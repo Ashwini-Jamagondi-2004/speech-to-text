@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: speech
+      POSTGRES_PASSWORD: speech
+      POSTGRES_DB: speech_db
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://speech:speech@db:5432/speech_db
+    ports: ["8000:8000"]
+    depends_on: [db]
+volumes:
+  pgdata:
