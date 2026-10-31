@@ -8,6 +8,8 @@ import numpy as np
 SAMPLE_RATE = 16000
 MODEL_SIZE = os.getenv("WHISPER_MODEL", "base")  # tiny | base | small | medium | large-v3
 COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+# Small/shared CPUs (e.g. Render free = 0.15 CPU) waste their quota on thread hand-offs
+CPU_THREADS = int(os.getenv("WHISPER_THREADS", "1"))
 
 _model = None
 _lock = threading.Lock()
@@ -20,7 +22,8 @@ def load_model():
     global _model
     if _model is None:
         from faster_whisper import WhisperModel
-        _model = WhisperModel(MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE)
+        _model = WhisperModel(MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE,
+                              cpu_threads=CPU_THREADS, num_workers=1)
     return _model
 
 

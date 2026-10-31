@@ -34,6 +34,8 @@ export default function Recorder({ onSaved }) {
 
   const r = useRef({});            // audio/ws handles
   const finalsRef = useRef([]);
+  const partialRef = useRef("");   // last live preview, saved if no final text arrives
+  const finishedRef = useRef(true);
   const langsRef = useRef(new Set());
   const startedAt = useRef(0);
 
@@ -44,9 +46,15 @@ export default function Recorder({ onSaved }) {
     ctx && ctx.state !== "closed" && ctx.close();
   };
 
+  // Called exactly once per session: after "done", a dropped connection, or the Stop timeout.
   const finish = async () => {
-    const text = finalsRef.current.join(" ").trim();
-    const duration = (Date.now() - startedAt.current) / 1000;
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    clearTimeout(r.current.timer);
+    const { ws } = r.current;
+    if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
+    const text = (finalsRef.current.join(" ").trim() || partialRef.current.trim());
+    const duration = ((r.current.stoppedAt || Date.now()) - startedAt.current) / 1000;
     setPartial("");
     setStatus("idle");
     if (!text) { setNotice("No speech detected, nothing saved."); return; }
@@ -62,7 +70,8 @@ export default function Recorder({ onSaved }) {
 
   const start = async () => {
     setError(""); setNotice(""); setFinals([]); setPartial("");
-    finalsRef.current = []; langsRef.current = new Set();
+    finalsRef.current = []; partialRef.current = ""; langsRef.current = new Set();
+    finishedRef.current = false;
     setStatus("connecting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -89,18 +98,21 @@ export default function Recorder({ onSaved }) {
       };
       ws.onmessage = (e) => {
         const m = JSON.parse(e.data);
-        if (m.type === "partial") setPartial(m.text);
+        if (m.type === "partial") { partialRef.current = m.text; setPartial(m.text); }
         else if (m.type === "final") {
           finalsRef.current = [...finalsRef.current, m.text];
           if (m.language) langsRef.current.add(m.language);
           setFinals(finalsRef.current);
+          partialRef.current = "";
           setPartial("");
         } else if (m.type === "error") setError(m.message);
-        else if (m.type === "done") { ws.close(); finish(); }
+        else if (m.type === "done") finish();
       };
-      ws.onerror = () => { setError("WebSocket connection failed."); cleanupAudio(); setStatus("idle"); };
+      ws.onerror = () => { setError("WebSocket connection failed."); cleanupAudio(); finish(); };
+      ws.onclose = () => { cleanupAudio(); finish(); };
     } catch (e) {
       cleanupAudio();
+      finishedRef.current = true;
       setStatus("idle");
       setError(e.name === "NotAllowedError" ? "Microphone permission denied." : e.message);
     }
@@ -109,10 +121,15 @@ export default function Recorder({ onSaved }) {
   const stop = () => {
     setStatus("stopping");
     cleanupAudio();
+    r.current.stoppedAt = Date.now();
     const { ws } = r.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "stop" }));
-      setTimeout(() => { if (r.current.ws === ws && ws.readyState === WebSocket.OPEN) { ws.close(); finish(); } }, 15000);
+      // The free server can need a while to transcribe; Start stays disabled until this resolves.
+      r.current.timer = setTimeout(() => {
+        if (!finishedRef.current) setError("The server took too long to transcribe. Please try a shorter recording.");
+        finish();
+      }, 120000);
     } else finish();
   };
 
@@ -132,7 +149,7 @@ export default function Recorder({ onSaved }) {
           <button className="danger" onClick={stop}>■ Stop &amp; save</button>
         )}
         {recording && <span className="pulse">● live</span>}
-        {status === "stopping" && <span className="muted">Finishing last words…</span>}
+        {status === "stopping" && <span className="muted">Transcribing… this can take up to a minute on the free server</span>}
       </div>
 
       <div className="transcript" aria-live="polite">

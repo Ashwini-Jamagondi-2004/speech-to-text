@@ -65,6 +65,8 @@ Tests: `cd backend && pytest`
 2. Render → **New → Blueprint** → select the repo (uses `render.yaml`: Docker web service + PostgreSQL).
 3. Wait for build; open the `https://….onrender.com` URL (HTTPS is required for microphone access).
 
+Live previews: `PARTIAL_EVERY_SEC` (default `0` = off, the recording is transcribed once on Stop; set `1.5` on a machine with at least 1 CPU). `WHISPER_THREADS` defaults to `1`.
+
 Model size tip: `WHISPER_MODEL=tiny|base|small`. `base` needs ~1 GB RAM in practice; use `tiny` on 512 MB plans.
 Accuracy for Hindi improves noticeably with `small`.
 
